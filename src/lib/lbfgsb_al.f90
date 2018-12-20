@@ -26,8 +26,8 @@
 
 !
 ! CHANGES
-! 19.12.2018 - Miha Polajnar
-! Started
+! 20.12.2018 - Miha Polajnar
+! Initial version
 !
 
 
