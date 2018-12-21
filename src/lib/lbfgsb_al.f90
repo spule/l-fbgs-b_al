@@ -36,42 +36,43 @@ module lbfgsb_al
   use l_bfgs_b_orig, only: setulb
   implicit none
   private
-
+!-------------------------------------------------------------------------------
   interface
-    real(rk) pure function func_intrf(x,arg)
+    real(rk) pure function func_intrf(x,dat)
       import :: rk
       real(rk), intent(in) :: x(:)
-      class(*), intent(in) :: arg
+      class(*), optional, intent(in) :: dat
     end function
-    pure subroutine grad_intrf(x,arg,g)
+    pure subroutine grad_intrf(x,dat,grad)
       import :: rk
       real(rk), intent(in) :: x(:)
-      real(rk), intent(out) :: g(:)
-      class(*), intent(in) :: arg
+      real(rk), intent(out) :: grad(:)
+      class(*), optional, intent(in) :: dat
     end subroutine
-    pure subroutine eq_const_intrf(x,arg,ce)
+    pure subroutine eq_const_intrf(x,dat,ce)
       import :: rk
       real(rk), intent(in) :: x(:)
-      class(*), intent(in) :: arg
+      class(*), optional, intent(in) :: dat
       real(rk), intent(out) :: ce(:)
     end subroutine
-    pure subroutine ieq_const_intrf(x,arg,ci)
+    pure subroutine ieq_const_intrf(x,dat,ci)
       import :: rk
       real(rk), intent(in) :: x(:)
-      class(*), intent(in) :: arg
+      class(*), optional, intent(in) :: dat
       real(rk), intent(out) :: ci(:)
     end subroutine
   end interface
-
+!-------------------------------------------------------------------------------
   interface l_bfgs_b
     module procedure :: l_bfgs_b
     module procedure :: l_bfgs_b_al_eq_const
     module procedure :: l_bfgs_b_al_ieq_const
   end interface
-
+  public :: l_bfgs_b
+!-------------------------------------------------------------------------------
 contains
-
-  subroutine l_bfgs_b(x,lb,ub,func,grad,factr,pgtol,iprint,nbd,m)
+!-------------------------------------------------------------------------------
+  subroutine l_bfgs_b(x,lb,ub,func,grad,factr,pgtol,iprint,nbd,m,dat)
     real(rk), intent(inout) :: x(:)
 !     x is a REAL array of length n.  On initial entry
 !       it must be set by the user to the values of the initial
@@ -142,6 +143,9 @@ contains
 !       It is not altered by the routine.  Values of m < 3  are
 !       not recommended, and large values of m can result in excessive
 !       computing time. The range  3 <= m <= 20 is recommended.
+    class(*), optional, intent(in) :: dat
+!     dat is an ULMITED POLYMORHIC VALUE for adaitional parameters to
+!        objective function.
 !-----------------------------Working variables---------------------------------
     real(rk), allocatable :: wa(:)
 !     wa is a REAL array of length
@@ -204,6 +208,8 @@ contains
 !         dsave(13) = the infinity norm of the projected gradient;
 !-------------------------------------------------------------------------------
     integer :: n ! number of variables
+    real(rk) :: func_local
+    real(rk), allocatable :: grad_local(:)
 !------------------------Take care of optional arguments------------------------
     if (.not.present(factr)) then
       factr_local = 1.e+7_rk  ! for moderate accuracy
@@ -216,9 +222,9 @@ contains
       pgtol_local = pgtol
     end if
     if (.not.present(iprint)) then
-      iprint_local = 0
+      iprint_local = 0 ! Print only one line at the last iteration
     else
-      iprint_local = iprint ! Print only one line at the last iteration
+      iprint_local = iprint
     end if
     if (.not.present(nbd)) then
       allocate(nbd_local(n),source=2) ! Both lower and upper bounds
@@ -230,7 +236,36 @@ contains
     else
       m_local = m
     end if
+!-------------------------------------------------------------------------------
+    allocate(grad_local(n))
+    allocate(iwa(3*n))
+    allocate(wa(2*m_local*n + 5*n + 11*m_local*m_local + 8*m_local))
+!-------------------------------MAIN LOOP---------------------------------------
+    task = 'START'
+    do while(task(1:2).eq.'FG'.or.task.eq.'NEW_X'.or. &
+      task.eq.'START')
+      ! Call to the original code
+      call setulb ( n, m_local, x, lb, ub, nbd_local, func_local, grad_local, &
+        factr_local, pgtol_local, wa, iwa, task, iprint_local, &
+        csave, lsave, isave, dsave )
+      ! Get objective function and gradient
+      if (task(1:2) .eq. 'FG') then
+        if (present(dat)) then
+          func_local = func(x=x,dat=dat)
+          call grad(x=x,dat=dat,grad=grad_local)
+        else
+          func_local = func(x=x)
+          call grad(x=x,grad=grad_local)
+        end if
+      else if (task(1:5) .eq. 'NEW_X') then
+!       The minimization routine has returned with a new iterate.
+!       At this point have the opportunity of stopping the iteration
+!       or observing the values of certain parameters
 
+
+      end if
+    end do
+!-----------------------------END OF MAIN LOOP----------------------------------
 
 
 
