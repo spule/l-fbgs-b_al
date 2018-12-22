@@ -44,7 +44,7 @@
 !
 !    **************
       program driver
-      use l_bfgs_b_orig, only: setulb
+      use l_bfgs_b_org, only: setulb
 
 !     This driver shows how to replace the default stopping test
 !     by other termination criteria. It also illustrates how to

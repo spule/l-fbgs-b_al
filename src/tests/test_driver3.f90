@@ -45,7 +45,7 @@
 !     **************
 
       program driver
-      use l_bfgs_b_orig, only: setulb, timer
+      use l_bfgs_b_org, only: setulb, timer
 !     This time-controlled driver shows that it is possible to terminate
 !     a run by elapsed CPU time, and yet be able to print all desired
 !     information. This driver also illustrates the use of two

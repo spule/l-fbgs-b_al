@@ -1,4 +1,4 @@
-!Copyright (c) 2018, Miha Polajnar
+!Copyright (c) 2011, 2018, Jorge Nocedal and Jose Luis Morales, Miha Polajnar
 !All rights reserved.
 !
 !Redistribution and use in source and binary forms, with or without
@@ -26,14 +26,14 @@
 
 !
 ! CHANGES
-! 20.12.2018 - Miha Polajnar
+! 21.12.2018 - Miha Polajnar
 ! Initial version
 !
 
 
-module lbfgsb_al
+module l_bfgs_b_ag
   use iso_fortran_env, only: rk => real64 ! Only for double precision
-  use l_bfgs_b_orig, only: setulb
+  use l_bfgs_b_org, only: setulb
   implicit none
   private
 !-------------------------------------------------------------------------------
@@ -72,7 +72,8 @@ module lbfgsb_al
 !-------------------------------------------------------------------------------
 contains
 !-------------------------------------------------------------------------------
-  subroutine l_bfgs_b(x,lb,ub,func,grad,factr,pgtol,iprint,nbd,m,dat)
+  subroutine l_bfgs_b(x,lb,ub,func,grad,factr,pgtol,iprint,nbd,m,dat,&
+    maxeval)
     real(rk), intent(inout) :: x(:)
 !     x is a REAL array of length n.  On initial entry
 !       it must be set by the user to the values of the initial
@@ -144,8 +145,12 @@ contains
 !       not recommended, and large values of m can result in excessive
 !       computing time. The range  3 <= m <= 20 is recommended.
     class(*), optional, intent(in) :: dat
-!     dat is an ULMITED POLYMORHIC VALUE for adaitional parameters to
+!     dat is an ULMITED POLYMORHIC VALUE for additional parameters to
 !        objective function.
+    integer, optional, intent(in) :: maxeval
+    integer :: maxeval_local
+!     maxeval is an INTEGER variable which determines maximal number of
+!       function in gradient evaluations
 !-----------------------------Working variables---------------------------------
     real(rk), allocatable :: wa(:)
 !     wa is a REAL array of length
@@ -208,11 +213,14 @@ contains
 !         dsave(13) = the infinity norm of the projected gradient;
 !-------------------------------------------------------------------------------
     integer :: n ! number of variables
+    integer :: i
     real(rk) :: func_local
     real(rk), allocatable :: grad_local(:)
+!-------------------------------------------------------------------------------
+    n = size(x)
 !------------------------Take care of optional arguments------------------------
     if (.not.present(factr)) then
-      factr_local = 1.e+7_rk  ! for moderate accuracy
+      factr_local = 1.e+7_rk  ! For moderate accuracy
     else
       factr_local = factr
     end if
@@ -232,9 +240,14 @@ contains
       nbd_local = nbd
     end if
     if (.not.present(m)) then
-      m_local = 7 ! Modernate number of corrections
+      m_local = 7 ! Moderate number of corrections
     else
       m_local = m
+    end if
+    if (.not.present(maxeval)) then
+      maxeval_local = 99
+    else
+      maxeval_local = maxeval
     end if
 !-------------------------------------------------------------------------------
     allocate(grad_local(n))
@@ -262,6 +275,21 @@ contains
 !       At this point have the opportunity of stopping the iteration
 !       or observing the values of certain parameters
 
+!       1) Terminate if the total number of f and g evaluations
+!            exceeds maxeval.
+        if (isave(34) .ge. maxeval_local)  &
+          task='STOP: TOTAL NO. of f AND g EVALUATIONS EXCEEDS LIMIT'
+!       2) Maybe additional stopping criteria, if needed
+
+        ! Print final results
+        write (6,'(2(a,i5,4x),a,1p,d12.5,4x,a,1p,d12.5)') 'Iterate', &
+          isave(30),'nfg =',isave(34),'f =',func_local,'|proj g| =',dsave(13)
+
+        if (task(1:4) .eq. 'STOP') then
+          write (6,*) task
+          write (6,*) 'Final X='
+          write (6,'((1x,1p, 6(1x,d11.4)))') (x(i),i = 1,n)
+        end if
 
       end if
     end do

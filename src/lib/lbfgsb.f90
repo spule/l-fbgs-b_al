@@ -30,7 +30,7 @@
 ! Remove explicit declaration of ddot function
 !
 
-module l_bfgs_b_orig
+module l_bfgs_b_org
 
   implicit none
 

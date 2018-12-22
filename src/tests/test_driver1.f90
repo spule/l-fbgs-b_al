@@ -188,7 +188,7 @@
 !     --------------------------------------------------------------
 !
       program driver
-      use l_bfgs_b_orig, only: setulb
+      use l_bfgs_b_org, only: setulb
 !
 !     This simple driver demonstrates how to call the L-BFGS-B code to
 !       solve a sample problem (the extended Rosenbrock function
