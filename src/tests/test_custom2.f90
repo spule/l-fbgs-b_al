@@ -6,37 +6,42 @@
 ! 21.12.2018 - Miha Polajnar
 ! Initial version
 !
-program custom1
+program custom2
   use iso_fortran_env, only: rk => real64
-  use l_bfgs_b_ag, only: l_bfgs_b
+  use l_bfgs_b_ag, only: l_bfgs_b_test, optim_prob_t, lbfgsb_opt_t
   implicit none
-  integer,  parameter :: n = 25, m = 5, iprint = 1
+  integer, parameter :: n = 25
   integer :: i
-  real(rk), parameter :: factr  = 1.0e+7_rk, pgtol  = 1.0e-5_rk
-  real(rk), allocatable :: x(:), lb(:), ub(:)
   type :: rconst_t
     real(rk) :: a, b
   end type
+  type(optim_prob_t) :: optim_prob
+  type(lbfgsb_opt_t) :: lbfgsb_opt
   type(rconst_t) :: rconst
-
+  lbfgsb_opt = lbfgsb_opt_t(iprint=1)
   rconst = rconst_t(a=4._rk,b=8._rk)
-  allocate(x(n), lb(n), ub(n))
-  ! Set up boundaries
+  ! Not working due to bugs
+  !optim_prob = optim_prob_t(name='Rosenbrock',n=25,neqc=0,nieqc=0,&
+  !  x=[(3._rk,i=1,25)],lb=[(0._rk,i=1,25)],ub=[(0._rk,i=1,25)],&
+  !  nbd=[(2,i=1,25)],func=rosenbrock_func,grad=grad_rosenbrock_func)
+  optim_prob%name = 'Rosenbrock'
+  optim_prob%n = n
+  optim_prob%x = [(3._rk,i=1,n)]
+  optim_prob%nbd=[(2,i=1,n)]
+  allocate(optim_prob%lb(n),optim_prob%ub(n))
   do i = 1, n, 2
-    lb(i)   = 1.0_rk
-    ub(i)   = 1.0e2_rk
+    optim_prob%lb(i)   = 1.0_rk
+    optim_prob%ub(i)   = 1.0e2_rk
   end do
   do i =2, n, 2
-    lb(i)   = -1.0e2_rk
-    ub(i)   =  1.0e2_rk
+    optim_prob%lb(i)   = -1.0e2_rk
+    optim_prob%ub(i)   =  1.0e2_rk
   end do
-  ! Set up starting point
-  do i = 1, n
-    x(i) = 3.0_rk
-  end do
+  optim_prob%func => rosenbrock_func
+  optim_prob%grad => grad_rosenbrock_func
+  allocate(optim_prob%dat,source=rconst)
   ! Run the algorithm
-  call l_bfgs_b(x,lb,ub,rosenbrock_func,grad_rosenbrock_func,&
-    iprint=iprint,m=m,dat=rconst,pgtol=pgtol,factr=factr)
+  call l_bfgs_b_test(optim_prob,lbfgsb_opt)
 contains
   !
   pure function rosenbrock_func(x,dat) result(res)

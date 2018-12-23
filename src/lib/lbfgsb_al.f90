@@ -32,10 +32,34 @@
 
 
 module l_bfgs_b_ag
-  use iso_fortran_env, only: rk => real64 ! Only for double precision
+  use iso_fortran_env, only: rk => real64, & ! Only for double precision
+    stdout => output_unit
   use l_bfgs_b_org, only: setulb
   implicit none
   private
+!-------------------------------------------------------------------------------
+  type :: optim_prob_t
+    character(len=256) :: name = ''
+    integer :: n = 0, neqc = 0, nieqc = 0
+    real(rk), allocatable :: x(:)
+    real(rk), allocatable :: lb(:)
+    real(rk), allocatable :: ub(:)
+    integer, allocatable :: nbd(:)
+    class(*), allocatable :: dat
+    procedure(func_intrf), pointer, nopass :: func => null()
+    procedure(grad_intrf), pointer, nopass :: grad => null()
+    procedure(eq_const_intrf), pointer, nopass :: eq_const => null()
+    procedure(grad_eq_const_intrf), pointer, nopass :: grad_eq_const => null()
+    procedure(ieq_const_intrf), pointer, nopass :: ieq_const => null()
+    procedure(grad_ieq_const_intrf), pointer, nopass :: grad_ieq_const => null()
+  end type
+  type :: lbfgsb_opt_t
+    real(rk) :: factr = 1.e+7_rk
+    real(rk) :: pgtol = 1.e-5_rk
+    integer :: iprint = 0
+    integer :: m = 5
+    integer :: maxeval = 99
+  end type
 !-------------------------------------------------------------------------------
   interface
     real(rk) pure function func_intrf(x,dat)
@@ -55,23 +79,35 @@ module l_bfgs_b_ag
       class(*), optional, intent(in) :: dat
       real(rk), intent(out) :: ce(:)
     end subroutine
+   pure subroutine grad_eq_const_intrf(x,dat,grad)
+      import :: rk
+      real(rk), intent(in) :: x(:)
+      class(*), optional, intent(in) :: dat
+      real(rk), intent(out) :: grad(:,:)
+    end subroutine
     pure subroutine ieq_const_intrf(x,dat,ci)
       import :: rk
       real(rk), intent(in) :: x(:)
       class(*), optional, intent(in) :: dat
       real(rk), intent(out) :: ci(:)
     end subroutine
+    pure subroutine grad_ieq_const_intrf(x,dat,grad)
+      import :: rk
+      real(rk), intent(in) :: x(:)
+      class(*), optional, intent(in) :: dat
+      real(rk), intent(out) :: grad(:,:)
+    end subroutine
   end interface
 !-------------------------------------------------------------------------------
   interface l_bfgs_b
     module procedure :: l_bfgs_b
-    module procedure :: l_bfgs_b_al_eq_const
-    module procedure :: l_bfgs_b_al_ieq_const
+    !module procedure :: l_bfgs_b_al_eq_const
+    !module procedure :: l_bfgs_b_al_ieq_const
   end interface
-  public :: l_bfgs_b
+  public :: l_bfgs_b, l_bfgs_b_test, optim_prob_t, lbfgsb_opt_t
 !-------------------------------------------------------------------------------
 contains
-!-------------------------------------------------------------------------------
+!------------------------CUSTOMIZED ORIGINAL DRIVER-----------------------------
   subroutine l_bfgs_b(x,lb,ub,func,grad,factr,pgtol,iprint,nbd,m,dat,&
     maxeval)
     real(rk), intent(inout) :: x(:)
@@ -205,7 +241,7 @@ contains
 !         isave(39) = the number of active constraints at the current
 !                         iteration;
     real(rk) :: dsave(29)
-!     dsave is a DOUBLE PRECISION working array of dimension 29.
+!     dsave is a REAL working array of dimension 29.
 !       On exit with task = 'NEW_X', it contains information that
 !         the user may want to access:
 !         dsave(2)  = the value of f at the previous iteration;
@@ -219,36 +255,18 @@ contains
 !-------------------------------------------------------------------------------
     n = size(x)
 !------------------------Take care of optional arguments------------------------
-    if (.not.present(factr)) then
-      factr_local = 1.e+7_rk  ! For moderate accuracy
-    else
-      factr_local = factr
-    end if
-    if (.not.present(pgtol)) then
-      pgtol_local = 1.e-5_rk
-    else
-      pgtol_local = pgtol
-    end if
-    if (.not.present(iprint)) then
-      iprint_local = 0 ! Print only one line at the last iteration
-    else
-      iprint_local = iprint
-    end if
-    if (.not.present(nbd)) then
-      allocate(nbd_local(n),source=2) ! Both lower and upper bounds
-    else
-      nbd_local = nbd
-    end if
-    if (.not.present(m)) then
-      m_local = 7 ! Moderate number of corrections
-    else
-      m_local = m
-    end if
-    if (.not.present(maxeval)) then
-      maxeval_local = 99
-    else
-      maxeval_local = maxeval
-    end if
+    factr_local = 1.e+7_rk  ! For moderate accuracy
+    pgtol_local = 1.e-5_rk
+    iprint_local = 0 ! Print only one line at the last iteration
+    allocate(nbd_local(n),source=2) ! Both lower and upper bounds
+    m_local = 7 ! Moderate number of corrections
+    maxeval_local = 99
+! Change non-default values
+    if (present(factr)) factr_local = factr
+    if (present(pgtol)) pgtol_local = pgtol
+    if (present(iprint)) iprint_local = iprint
+    if (present(nbd)) nbd_local = nbd
+    if (present(m)) m_local = m
 !-------------------------------------------------------------------------------
     allocate(grad_local(n))
     allocate(iwa(3*n))
@@ -282,37 +300,218 @@ contains
 !       2) Maybe additional stopping criteria, if needed
 
         ! Print final results
-        write (6,'(2(a,i5,4x),a,1p,d12.5,4x,a,1p,d12.5)') 'Iterate', &
+        write (stdout,'(2(a,i5,4x),a,1p,d12.5,4x,a,1p,d12.5)') 'Iterate', &
           isave(30),'nfg =',isave(34),'f =',func_local,'|proj g| =',dsave(13)
 
         if (task(1:4) .eq. 'STOP') then
-          write (6,*) task
-          write (6,*) 'Final X='
-          write (6,'((1x,1p, 6(1x,d11.4)))') (x(i),i = 1,n)
+          write (stdout,*) task
+          write (stdout,*) 'Final X='
+          write (stdout,'((1x,1p, 6(1x,d11.4)))') (x(i),i = 1,n)
         end if
 
       end if
     end do
 !-----------------------------END OF MAIN LOOP----------------------------------
-
-
-
   end subroutine
 
 
+!---------------------------EQUALITY CONSTRAINS---------------------------------
+!  subroutine l_bfgs_b_al_eq_const(x,lb,ub,func,grad,eq_const,factr,pgtol,m,dat,&
+!    iprint,nbd,maxeval)
+!    real(rk), intent(inout) :: x(:)
+!    real(rk), intent(in) :: lb(:)
+!    real(rk), intent(in) :: ub(:)
+!    procedure(func_intrf) :: func
+!    procedure(grad_intrf) :: grad
+!    real(rk), intent(out) :: ce(:)
+!!     ce is a REAL array of equality constrains values.
+!    real(rk), intent(inout) :: lagr(:)
+!!     lagr is a REAL array of Lagrange multipliers values.
+!    procedure(eq_const_intrf) :: eq_const
+!!     eq_const is a pure subroutine to determine values of equality constrains.
+!    procedure(grad_eq_const_intrf) :: grad_eq_const
+!!     grad_eq_const is a pure subroutine to determine gradient values of
+!!       equality constrains.
+!    real(rk), optional, intent(in) :: factr
+!    real(rk) :: factr_local
+!    real(rk), optional, intent(in) :: pgtol
+!    real(rk) :: pgtol_local
+!    integer, optional, intent(in) :: iprint
+!    integer :: iprint_local
+!    integer, optional, intent(in) :: nbd(:)
+!    integer, allocatable :: nbd_local(:)
+!    integer, optional, intent(in) :: m
+!    integer :: m_local
+!    class(*), optional, intent(in) :: dat
+!    integer, optional, intent(in) :: maxeval
+!    integer :: maxeval_local
+!!-----------------------------Working variables---------------------------------
+!    real(rk), allocatable :: wa(:)
+!    integer, allocatable :: iwa(:)
+!    character(len=60) :: task
+!    character(len=60) :: csave
+!    logical :: lsave(4)
+!    integer :: isave(44)
+!    real(rk) :: dsave(29)
+!!-------------------------------------------------------------------------------
+!    integer :: n ! number of variables
+!    integer :: i
+!    real(rk) :: func_local
+!    real(rk), allocatable :: grad_local(:)
+!!-------------------------AUGMENTED LAGRANGIAN PARAMETERS-----------------------
+!    real(rk), parameter :: omega_star = 1.e-4_rk, eta_star = 1.e-4_rk, &
+!      mu_incr = 1.05_rk
+!    real(rk) :: mu, omega, eta
+!    mu = 1.0_rk; omega = 1._rk / mu; eta = 1._rk / mu**0.1_rk
+!!-------------------------------------------------------------------------------
+!    n = size(x)
+!    nce = size(ce)
+!!------------------------Take care of optional arguments------------------------
+!    factr_local = 1.e+7_rk  ! For moderate accuracy
+!    pgtol_local = 1.e-5_rk
+!    iprint_local = 0 ! Print only one line at the last iteration
+!    allocate(nbd_local(n),source=2) ! Both lower and upper bounds
+!    m_local = 7 ! Moderate number of corrections
+!    maxeval_local = 99
+!! Change non-default values
+!    if (present(factr)) factr_local = factr
+!    if (present(pgtol)) pgtol_local = pgtol
+!    if (present(iprint)) iprint_local = iprint
+!    if (present(nbd)) nbd_local = nbd
+!    if (present(m)) m_local = m
+!    if (present(maxeval)) maxeval_local = maxeval
+!!-------------------------------------------------------------------------------
+!    allocate(grad_local(n))
+!    allocate(iwa(3*n))
+!    allocate(wa(2*m_local*n + 5*n + 11*m_local*m_local + 8*m_local))
+!!-------------------------------MAIN LOOP---------------------------------------
+!    task = 'START'
+!    do while(task(1:2).eq.'FG'.or.task.eq.'NEW_X'.or. &
+!      task.eq.'START')
+!      ! Call to the original code
+!      call setulb ( n, m_local, x, lb, ub, nbd_local, func_local, grad_local, &
+!        factr_local, pgtol_local, wa, iwa, task, iprint_local, &
+!        csave, lsave, isave, dsave )
+!      ! Get objective function and gradient
+!      if (task(1:2) .eq. 'FG') then
+!        if (present(dat)) then
+!          call eq_const(x,dat,ce)
+!          func_local = func(x=x,dat=dat)
+!          func_local = func_local - sum(lagr*ce) + mu / 2._rk * sum(ce**2)
+!          !
+!          call grad(x=x,dat=dat,grad=grad_local)
+!          !grad_local = grad_local - lagr * grad_ce + mu * ce * grad_ce
+!        else
+!          func_local = func(x=x)
+!          func_local = func_local - sum(lagr*ce) + mu / 2._rk * sum(ce**2)
+!          !
+!          call grad(x=x,grad=grad_local)
+!        end if
+!      else if (task(1:5) .eq. 'NEW_X') then
+!!       The minimization routine has returned with a new iterate.
+!!       At this point have the opportunity of stopping the iteration
+!!       or observing the values of certain parameters
+!
+!!       1) Terminate if the total number of f and g evaluations
+!!            exceeds maxeval.
+!        if (isave(34) .ge. maxeval_local)  &
+!          task='STOP: TOTAL NO. of f AND g EVALUATIONS EXCEEDS LIMIT'
+!!       2) Maybe additional stopping criteria, if needed
+!
+!        ! Print final results
+!        write (stdout,'(2(a,i5,4x),a,1p,d12.5,4x,a,1p,d12.5)') 'Iterate', &
+!          isave(30),'nfg =',isave(34),'f =',func_local,'|proj g| =',dsave(13)
+!
+!        if (task(1:4) .eq. 'STOP') then
+!          write (stdout,*) task
+!          write (stdout,*) 'Final X='
+!          write (stdout,'((1x,1p, 6(1x,d11.4)))') (x(i),i = 1,n)
+!        end if
+!
+!      end if
+!    end do
+!!-----------------------------END OF MAIN LOOP----------------------------------
+!  end subroutine
+!
+!  subroutine l_bfgs_b_al_ieq_const(m,bris1,bris2)
+!    integer, optional, intent(in) :: m
+!    integer, intent(in) :: bris1,bris2
+!
+!  end subroutine
 
-  subroutine l_bfgs_b_al_eq_const(m,bris)
-    integer, optional, intent(in) :: m
-    integer, intent(in) :: bris
+
+  subroutine l_bfgs_b_test(optim_prob,lbfgsb_opt)
+    type(optim_prob_t), intent(inout) :: optim_prob
+    type(lbfgsb_opt_t), intent(in) :: lbfgsb_opt
+!-----------------------------Working variables---------------------------------
+    real(rk), allocatable :: wa(:)
+    integer, allocatable :: iwa(:)
+    character(len=60) :: task
+    character(len=60) :: csave
+    logical :: lsave(4)
+    integer :: isave(44)
+    real(rk) :: dsave(29)
+!-------------------------------------------------------------------------------
+    integer :: i
+    real(rk) :: f
+    real(rk), allocatable :: g(:)
+!-------------------------AUGMENTED LAGRANGIAN PARAMETERS-----------------------
+    real(rk), parameter :: omega_star = 1.e-4_rk, eta_star = 1.e-4_rk, &
+      mu_incr = 1.05_rk
+    real(rk) :: mu, omega, eta
+!---------------------------------CHECKS----------------------------------------
+    if (.not.associated(optim_prob%func)) error stop 'Function not associated &
+      &in optimization problem.'
+    if (.not.associated(optim_prob%grad)) error stop 'Gradient not associated &
+      &in optimization problem.'
+!-------------------------------------------------------------------------------
+    associate(n => optim_prob%n, m => lbfgsb_opt%m)
+    allocate(g(n))
+    allocate(iwa(3*n))
+    allocate(wa(2*m*n + 5*n + 11*m*m + 8*m))
+!-------------------------------------------------------------------------------
+    if (lbfgsb_opt%iprint >= 0) then
+      write(stdout,'(a,a)') 'Running the optimization problem ', optim_prob%name
+    end if
+!-------------------------------MAIN LOOP---------------------------------------
+    task = 'START'
+    do while(task(1:2).eq.'FG'.or.task.eq.'NEW_X'.or. &
+      task.eq.'START')
+      ! Call to the original code
+      call setulb (n, m, optim_prob%x, &
+        optim_prob%lb, optim_prob%ub, optim_prob%nbd, &
+        f, g, &
+        lbfgsb_opt%factr, lbfgsb_opt%pgtol, &
+        wa, iwa, task, &
+        lbfgsb_opt%iprint, &
+        csave, lsave, isave, dsave )
+      if (task(1:2) .eq. 'FG') then
+        if (allocated(optim_prob%dat)) then
+          f = optim_prob%func(x=optim_prob%x,dat=optim_prob%dat)
+          call optim_prob%grad(x=optim_prob%x,dat=optim_prob%dat,grad=g)
+        else
+          f = optim_prob%func(x=optim_prob%x)
+          call optim_prob%grad(x=optim_prob%x,grad=g)
+        end if
 
 
+
+
+
+      else if (task(1:5) .eq. 'NEW_X') then
+        if (isave(34) .ge. lbfgsb_opt%maxeval)  &
+          task='STOP: TOTAL NO. of f AND g EVALUATIONS EXCEEDS LIMIT'
+        write (stdout,'(2(a,i5,4x),a,1p,d12.5,4x,a,1p,d12.5)') 'Iterate', &
+          isave(30),'nfg =',isave(34),'f =',f,'|proj g| =',dsave(13)
+        if (task(1:4) .eq. 'STOP') then
+          write (stdout,*) task
+          write (stdout,*) 'Final X='
+          write (stdout,'((1x,1p, 6(1x,d11.4)))') (optim_prob%x(i),i = 1,n)
+        end if
+      end if
+    end do
+    end associate
+!-----------------------------END OF MAIN LOOP----------------------------------
   end subroutine
-
-  subroutine l_bfgs_b_al_ieq_const(m,bris1,bris2)
-    integer, optional, intent(in) :: m
-    integer, intent(in) :: bris1,bris2
-
-  end subroutine
-
 
 end module
