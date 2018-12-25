@@ -6,84 +6,69 @@
 ! 21.12.2018 - Miha Polajnar
 ! Initial version
 !
-program custom2
+program custom1
   use iso_fortran_env, only: rk => real64
-  use l_bfgs_b_ag, only: l_bfgs_b_test, optim_prob_t, lbfgsb_opt_t
+  use l_bfgs_b_ag, only: l_bfgs_b, optim_prob_t, lbfgsb_opt_t
   implicit none
-  integer, parameter :: n = 25
+  integer, parameter :: n = 2
   integer :: i
   type :: rconst_t
     real(rk) :: a, b
   end type
   type(optim_prob_t) :: optim_prob
   type(lbfgsb_opt_t) :: lbfgsb_opt
-  type(rconst_t) :: rconst
-  lbfgsb_opt = lbfgsb_opt_t(iprint=1)
-  rconst = rconst_t(a=4._rk,b=8._rk)
-  ! Not working due to bugs
-  !optim_prob = optim_prob_t(name='Rosenbrock',n=25,neqc=0,nieqc=0,&
-  !  x=[(3._rk,i=1,25)],lb=[(0._rk,i=1,25)],ub=[(0._rk,i=1,25)],&
-  !  nbd=[(2,i=1,25)],func=rosenbrock_func,grad=grad_rosenbrock_func)
-  optim_prob%name = 'Rosenbrock'
+  !
+  lbfgsb_opt = lbfgsb_opt_t(iprint=-200,factr=1.e7_rk,pgtol=1.e-5_rk,&
+    maxeval=500)
+  !
+  optim_prob%name = 'NOCEDAL EX. 17.1'
   optim_prob%n = n
-  optim_prob%x = [(3._rk,i=1,n)]
+  optim_prob%x = [(0._rk,i=1,n)]
   optim_prob%nbd=[(2,i=1,n)]
   allocate(optim_prob%lb(n),optim_prob%ub(n))
-  do i = 1, n, 2
-    optim_prob%lb(i)   = 1.0_rk
-    optim_prob%ub(i)   = 1.0e2_rk
-  end do
-  do i =2, n, 2
-    optim_prob%lb(i)   = -1.0e2_rk
-    optim_prob%ub(i)   =  1.0e2_rk
-  end do
-  optim_prob%func => rosenbrock_func
-  optim_prob%grad => grad_rosenbrock_func
-  allocate(optim_prob%dat,source=rconst)
+  optim_prob%lb = [(-5.12_rk,i=1,n)]
+  optim_prob%ub = [(5.12_rk,i=1,n)]
+  optim_prob%func => nocedal_ex_17_1
+  optim_prob%grad => grad_nocedal_ex_17_1
+  optim_prob%neqc = 1
+  optim_prob%eq_const => nocedal_ex_17_1_eq_const
+  optim_prob%grad_eq_const => grad_nocedal_ex_17_1_eq_const
+  allocate(optim_prob%dat,source=2._rk)
   ! Run the algorithm
-  call l_bfgs_b_test(optim_prob,lbfgsb_opt)
+  call l_bfgs_b(optim_prob,lbfgsb_opt)
 contains
-  !
-  pure function rosenbrock_func(x,dat) result(res)
+
+  real(rk) pure function nocedal_ex_17_1(x,dat)
     real(rk), intent(in) :: x(:)
-    class(*), optional, intent(in) :: dat
-    real(rk) :: res
-    integer :: i
-    if(.not.present(dat)) error stop 'Rosenbrock function, missing constants.'
-    res = .25_rk * (x(1) - 1._rk)**2
-    do i = 2, size(x)
-      res = res + (x(i) - x(i - 1)**2)**2
-    end do
-    select type(dat)
-    type is (rconst_t)
-      res = dat%a * res
-    class default
-      error stop 'Rosenbrock function, incorrect type.'
-    end select
+    class(*), intent(in) :: dat
+    nocedal_ex_17_1 = x(1) + x(2)
   end function
-  !
-  pure subroutine grad_rosenbrock_func(x,dat,grad)
+
+  pure subroutine grad_nocedal_ex_17_1(x,dat,grad)
     real(rk), intent(in) :: x(:)
-    class(*), optional, intent(in) :: dat
+    class(*), intent(in) :: dat
     real(rk), intent(out) :: grad(:)
-    integer :: i, n
-    real(rk) :: t1, t2
-    if(.not.present(dat)) error stop 'Rosenbrock function gradient, &
-      &missing constants.'
-    n = size(x)
-    t1 = x(2) - x(1)**2
-    grad(1) = 2._rk * (x(1) - 1._rk) - 1.6e1_rk * x(1) * t1
-    do i = 2, n - 1
-       t2   = t1
-       t1   = x(i+1) - x(i)**2
-       grad(i) = 8._rk * t2 - 1.6e1_rk * x(i) * t1
-    end do
-    select type (dat)
-    type is (rconst_t)
-      grad(n) = dat%b * t1
+    grad(1) = 1._rk
+    grad(2) = 1._rk
+  end subroutine
+
+  pure subroutine nocedal_ex_17_1_eq_const(x,dat,ce)
+    real(rk), intent(in) :: x(:)
+    class(*), intent(in) :: dat
+    real(rk), intent(out) :: ce(:)
+    select type(dat)
+    type is (real(rk))
+      ce(1) = x(1)**2 + x(2)**2 - dat
     class default
-      error stop 'Rosenbrock function gradient, incorrect type.'
+      error stop 'Nocedal EX. 17.1 wrong type.'
     end select
   end subroutine
-  !
+
+  pure subroutine grad_nocedal_ex_17_1_eq_const(x,dat,grad)
+    real(rk), intent(in) :: x(:)
+    class(*), intent(in) :: dat
+    real(rk), intent(out) :: grad(:,:)
+    grad(1,1) = 2._rk * x(1)
+    grad(1,2) = 2._rk * x(2)
+  end subroutine
 end program

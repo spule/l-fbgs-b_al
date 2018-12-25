@@ -28,8 +28,9 @@
 ! CHANGES
 ! 16.12.2018 - Miha Polajnar
 ! Remove explicit declaration of ddot function
+! 26.12.2018 - Miha Polajnar
+! Termination test change from .le. to .lt. and add abs to (fold -f)
 !
-
 module l_bfgs_b_org
 
   implicit none
@@ -1380,14 +1381,14 @@ contains
 
 !     Test for termination.
 
-      if (sbgnrm .le. pgtol) then
+      if (sbgnrm .lt. pgtol) then
 !                                terminate the algorithm.
          task = 'CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL'
          goto 999
       endif
 
       ddum = max(abs(fold), abs(f), one)
-      if ((fold - f) .le. tol*ddum) then
+      if (abs(fold - f) .lt. tol*ddum) then
 !                                        terminate the algorithm.
          task = 'CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH'
          if (iback .ge. 10) info = -5
