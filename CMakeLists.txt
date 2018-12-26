@@ -57,7 +57,7 @@ add_library(lbfgsb_al src/lib/lbfgsb.f90 src/lib/lbfgsb_al.f90)
 
 # tests
 enable_testing()
-foreach(execid driver1 driver2 driver3 custom1 custom2)
+foreach(execid driver1 driver2 driver3 custom1 custom2 custom3)
   add_executable(test_${execid} src/tests/test_${execid}.f90)
   target_link_libraries(test_${execid} lbfgsb_al)
   add_test(test_${execid} bin/test_${execid})

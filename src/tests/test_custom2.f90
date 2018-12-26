@@ -33,6 +33,7 @@ program custom1
   optim_prob%neqc = 1
   optim_prob%eq_const => nocedal_ex_17_1_eq_const
   optim_prob%grad_eq_const => grad_nocedal_ex_17_1_eq_const
+  allocate(optim_prob%lagr(optim_prob%neqc),source=10._rk)
   allocate(optim_prob%dat,source=2._rk)
   ! Run the algorithm
   call l_bfgs_b(optim_prob,lbfgsb_opt)

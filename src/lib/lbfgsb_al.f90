@@ -24,7 +24,7 @@
 !SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 !
 ! CHANGES
-! 21.12.2018 - Miha Polajnar
+! 26.12.2018 - Miha Polajnar
 ! Initial version
 !
 module l_bfgs_b_ag
@@ -35,9 +35,8 @@ module l_bfgs_b_ag
   private
 !-------------------------------------------------------------------------------
   type :: optim_prob_t
-    character(len=256) :: name = '' ! Optimization problem name
-    integer :: n = 0, neqc = 0, nieqc = 0 ! N variables, equality
-      ! and inequality constrains
+    character(len=256) :: name = 'Unknown' ! Optimization problem name
+    integer :: n = 0, neqc = 0 ! N variables, equality constrains
     real(rk), allocatable :: x(:) ! Initial estimate of the solution vector
     real(rk), allocatable :: lb(:), ub(:) ! Lover and upper bounds
     integer, allocatable :: nbd(:)
@@ -53,8 +52,6 @@ module l_bfgs_b_ag
     procedure(grad_intrf), pointer, nopass :: grad => null()
     procedure(eq_const_intrf), pointer, nopass :: eq_const => null()
     procedure(grad_eq_const_intrf), pointer, nopass :: grad_eq_const => null()
-    procedure(ieq_const_intrf), pointer, nopass :: ieq_const => null()
-    procedure(grad_ieq_const_intrf), pointer, nopass :: grad_ieq_const => null()
   end type
 !-------------------------------------------------------------------------------
   type :: lbfgsb_opt_t
@@ -117,18 +114,6 @@ module l_bfgs_b_ag
       real(rk), intent(out) :: ce(:)
     end subroutine
    pure subroutine grad_eq_const_intrf(x,dat,grad)
-      import :: rk
-      real(rk), intent(in) :: x(:)
-      class(*), intent(in) :: dat
-      real(rk), intent(out) :: grad(:,:)
-    end subroutine
-    pure subroutine ieq_const_intrf(x,dat,ci)
-      import :: rk
-      real(rk), intent(in) :: x(:)
-      class(*), intent(in) :: dat
-      real(rk), intent(out) :: ci(:)
-    end subroutine
-    pure subroutine grad_ieq_const_intrf(x,dat,grad)
       import :: rk
       real(rk), intent(in) :: x(:)
       class(*), intent(in) :: dat
@@ -206,15 +191,14 @@ contains
     real(rk), allocatable :: ce(:) ! Equality constrains values
     logical :: eq_const_present
     real(rk), allocatable :: grad_ce(:,:) ! Equality constrains gradient values
-    real(rk), allocatable :: ci(:) ! Inequality constrains values
-    logical :: ieq_const_present
     real(rk), allocatable :: rtmp1(:)
 !-------------------------AUGMENTED LAGRANGIAN PARAMETERS-----------------------
     real(rk), parameter ::  eta_star = 1.e-4_rk, mu_incr = 1.01_rk
     real(rk) :: mu, eta
 !-------------------------------------------------------------------------------
     if (lbfgsb_opt%iprint >= 0) then
-      write(stdout,'(a,a)') 'Running the optimization problem ', optim_prob%name
+      write(stdout,'(a,a)') 'Running optimization problem ', &
+        trim(optim_prob%name), '.'
     end if
 !---------------------------------CHECKS----------------------------------------
     if (.not.associated(optim_prob%func)) error stop 'Function not associated &
@@ -226,20 +210,15 @@ contains
       if (.not.associated(optim_prob%grad_eq_const)) error stop &
         'Equality constrains gradient not associated in optimization &
         &problem.'
+      if (lbfgsb_opt%iprint >= 0) then
+        write(stdout,'(a)') 'CONSTRAINED optimization problem.'
+      end if
     else
       eq_const_present = .false.
     end if
-    if (associated(optim_prob%ieq_const)) then
-      ieq_const_present = .true.
-      if (.not.associated(optim_prob%grad_ieq_const)) error stop &
-        'Inequality constrains gradient not associated in optimization &
-        &problem.'
-    else
-      ieq_const_present = .false.
-    end if
 !---------------------------------Associate-------------------------------------
     associate(n => optim_prob%n, m => lbfgsb_opt%m, x => optim_prob%x, &
-      lagr => optim_prob%lagr, neqc => optim_prob%neqc )
+      neqc => optim_prob%neqc )
 !-------------------------------Work allocations--------------------------------
     allocate(g(n))
     allocate(iwa(3*n))
@@ -250,19 +229,15 @@ contains
         allocate(optim_prob%lagr(optim_prob%neqc),source=1._rk)
         if (lbfgsb_opt%iprint >= 0) then
           write(stdout,'(a)') 'WARNING, initial Lagrangian multipliers &
-            &with default values.'
+            &with default values (1.0).'
         end if
       end if
       allocate(grad_ce(optim_prob%neqc,n))
       allocate(rtmp1(n))
     end if
-    if (optim_prob%nieqc > 0) then
-      allocate(ci(optim_prob%nieqc))
-    end if
-
 !-------------------------------------------------------------------------------
     task = 'START'
-    mu = 1.0_rk; eta = 1._rk / mu**0.1_rk
+    mu = 100.0_rk; eta = 1._rk / mu**0.1_rk
 !-------------------------------MAIN LOOP---------------------------------------
     do while(task(1:2).eq.'FG'.or.task.eq.'NEW_X'.or. &
       task.eq.'START')
@@ -275,8 +250,6 @@ contains
         lbfgsb_opt%iprint, &
         csave, lsave, isave, dsave )
       !
-      print*, task
-
       if (task(1:2) .eq. 'FG') then
         ! Get objective function and gradient
         f = optim_prob%func(x=x,dat=optim_prob%dat)
@@ -284,14 +257,6 @@ contains
 !-----------------------------Equality constrains-------------------------------
         if (eq_const_present) then
           call optim_prob%eq_const(x=x,dat=optim_prob%dat,ce=ce)
-          if (norm2(ce) <= eta) then
-            ! update multipliers, tighten tolerances
-            optim_prob%lagr = optim_prob%lagr - mu * ce
-            eta = eta / mu**0.9_rk
-          else ! increase penalty parameter, tighten tolerances
-            mu = mu_incr * mu
-            eta = 1._rk / mu**0.1_rk
-          end if
           ! Update function
           f = f - sum(optim_prob%lagr*ce) + mu / 2._rk * sum(ce**2)
           ! Update gradients
@@ -311,34 +276,27 @@ contains
           end do
           rtmp1 = mu * rtmp1
           g = g + rtmp1
-
-          print*, 'x=', x
-          print*, 'f=', f
-          print*, 'g=', g
-          print*, 'lagr=', optim_prob%lagr
-
-
         end if
-!---------------------------Inequality constrains-------------------------------
-        if (ieq_const_present) then
-        end if
-
-
-
-
-
-
-      else if (task(1:5) .eq. 'NEW_X') then
 !       The minimization routine has returned with a new iterate.
 !       At this point have the opportunity of stopping the iteration
 !       or observing the values of certain parameters
-
+      else if (task(1:5) .eq. 'NEW_X') then
+!---------------Update Augmented Lagrangian parameters--------------------------
+        call optim_prob%eq_const(x=x,dat=optim_prob%dat,ce=ce)
+        if (norm2(ce) <= eta) then
+          ! update multipliers, tighten tolerances
+          optim_prob%lagr = optim_prob%lagr - mu * ce
+          eta = eta / mu**0.9_rk
+        else ! increase penalty parameter, tighten tolerances
+          mu = mu_incr * mu
+          eta = 1._rk / mu**0.1_rk
+        end if
 !       1) Terminate if the total number of f and g evaluations
 !            exceeds maxeval.
         if (isave(34) .ge. lbfgsb_opt%maxeval)  &
           task='STOP: TOTAL NO. of f AND g EVALUATIONS EXCEEDS LIMIT'
 !       2) Maybe additional stopping criteria, if needed
-!       ...
+!       ... maximal exceeded time
         ! Print final results
         write (stdout,'(2(a,i5,4x),a,1p,d12.5,4x,a,1p,d12.5)') 'Iterate', &
           isave(30),'nfg =',isave(34),'f =',f,'|proj g| =',dsave(13)
@@ -349,12 +307,7 @@ contains
         end if
       end if
     end do
-
-
     end associate
-
-
 !-----------------------------END OF MAIN LOOP----------------------------------
   end subroutine
-
 end module

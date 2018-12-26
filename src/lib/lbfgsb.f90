@@ -1383,14 +1383,14 @@ contains
 
       if (sbgnrm .lt. pgtol) then
 !                                terminate the algorithm.
-         task = 'CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL'
+         task = 'CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<_PGTOL'
          goto 999
       endif
 
       ddum = max(abs(fold), abs(f), one)
       if (abs(fold - f) .lt. tol*ddum) then
 !                                        terminate the algorithm.
-         task = 'CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH'
+         task = 'CONVERGENCE: REL_REDUCTION_OF_F_<_FACTR*EPSMCH'
          if (iback .ge. 10) info = -5
 !           i.e., to issue a warning if iback>10 in the line search.
          goto 999
